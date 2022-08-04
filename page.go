@@ -472,7 +472,6 @@ func (p Page) GetPlainText(fonts map[string]*Font) (result string, err error) {
 
 	strm := p.V.Key("Contents")
 	var enc TextEncoding = &nopEncoder{}
-
 	if fonts == nil {
 		fonts = make(map[string]*Font)
 		for _, font := range p.Fonts() {
@@ -500,6 +499,7 @@ func (p Page) GetPlainText(fonts map[string]*Font) (result string, err error) {
 
 		switch op {
 		default:
+			// fmt.Println("Token: ", op, "Args: ", args)
 			return
 		case "T*": // move to start of next line
 			showText("\n")
@@ -537,6 +537,7 @@ func (p Page) GetPlainText(fonts map[string]*Font) (result string, err error) {
 			}
 		}
 	})
+
 	return textBuilder.String(), nil
 }
 
@@ -620,7 +621,84 @@ type Row struct {
 type Rows []*Row
 
 // GetTextByRow returns the page's all text grouped by rows
-func (p Page) GetTextByRow() (Rows, error) {
+func (p Page) GetTextByRow() (result [][]string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = nil
+			err = errors.New(fmt.Sprint(r))
+		}
+	}()
+
+	strm := p.V.Key("Contents")
+
+	matrix := make(map[float64][]string, 0)
+
+	var curY float64
+	Interpret(strm, func(stk *Stack, op string) {
+		n := stk.Len()
+		args := make([]Value, n)
+		for i := n - 1; i >= 0; i-- {
+			args[i] = stk.Pop()
+		}
+
+		switch op {
+		case "Td": // text position
+			curY = args[1].Float64()
+			// fmt.Println("TL: ", curX, ", ", curY)
+		default:
+			// fmt.Println("Token: ", op, "Args: ", args)
+			return
+		case "T*": // move to start of next line
+			//showText("\n")
+		case "Tf": // set text font and size
+			if len(args) != 2 {
+				panic("bad TL")
+			}
+		case "\"": // set spacing, move to next line, and show text
+			if len(args) != 3 {
+				panic("bad \" operator")
+			}
+			fallthrough
+		case "'": // move to next line and show text
+			if len(args) != 1 {
+				panic("bad ' operator")
+			}
+			fallthrough
+		case "Tj": // show text
+			if len(args) != 1 {
+				panic("bad Tj operator")
+			}
+
+			matrix[curY] = append(matrix[curY], args[0].RawString())
+		case "TJ": // show text, allowing individual glyph positioning
+			v := args[0]
+			for i := 0; i < v.Len(); i++ {
+				x := v.Index(i)
+				if x.Kind() == String {
+					// showText(x.RawString())
+				}
+			}
+		}
+	})
+
+	keys := make([]float64, 0, len(matrix))
+	for k := range matrix {
+		keys = append(keys, k)
+	}
+
+	sort.Float64s(keys)
+	sorted := make([][]string, 0)
+
+	j := 0
+	for i := len(keys) - 1; i >= 0; i-- {
+		sorted = append(sorted, matrix[keys[i]])
+		j++
+	}
+
+	return sorted, nil
+}
+
+/*
 	result := Rows{}
 	var err error
 
@@ -683,6 +761,7 @@ func (p Page) GetTextByRow() (Rows, error) {
 
 	return result, err
 }
+*/
 
 func (p Page) walkTextBlocks(walker func(enc TextEncoding, x, y float64, s string)) {
 	strm := p.V.Key("Contents")
@@ -735,6 +814,7 @@ func (p Page) walkTextBlocks(walker func(enc TextEncoding, x, y float64, s strin
 				panic("bad Tj operator")
 			}
 
+			// fmt.Println("[", op, "] Walking: ", args, " pos(", currentX, ", ", currentY, ")")
 			walker(enc, currentX, currentY, args[0].RawString())
 		case "TJ": // show text, allowing individual glyph positioning
 			v := args[0]
@@ -749,6 +829,7 @@ func (p Page) walkTextBlocks(walker func(enc TextEncoding, x, y float64, s strin
 		case "Tm":
 			currentX = args[4].Float64()
 			currentY = args[5].Float64()
+			// fmt.Println("Tm: ", args, " pos(", currentX, ", ", currentY, ")")
 		}
 	})
 }

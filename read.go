@@ -106,17 +106,24 @@ func Open(file string) (*Reader, error) {
 		f.Close()
 		return nil, err
 	}
-	fi, err := f.Stat()
+	_, err = f.Stat()
 	if err != nil {
 		f.Close()
 		return nil, err
 	}
-	return NewReader(f, fi.Size())
+	return NewReader(f)
 }
 
 // NewReader opens a file for reading, using the data in f with the given total size.
-func NewReader(f io.ReaderAt, size int64) (*Reader, error) {
-	return NewReaderEncrypted(f, size, nil)
+func NewReader(f io.Reader) (*Reader, error) {
+
+	buf := bytes.NewBuffer([]byte{})
+	nRead, err := io.Copy(buf, f.(io.Reader))
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	return NewReaderEncrypted(bytes.NewReader(buf.Bytes()), nRead, nil)
 }
 
 // NewReaderEncrypted opens a file for reading, using the data in f with the given total size.

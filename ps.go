@@ -63,7 +63,9 @@ func Interpret(strm Value, do func(stk *Stack, op string)) {
 Reading:
 	for {
 		tok := b.readToken()
+		// fmt.Println("tok: ", tok)
 		if tok == io.EOF {
+			// fmt.Println("EOF")
 			break
 		}
 		if kw, ok := tok.(keyword); ok {
