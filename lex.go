@@ -90,7 +90,7 @@ func (b *buffer) reload() (bool, error) {
 	if n == 0 && err != nil {
 		b.buf = b.buf[:0]
 		b.pos = 0
-		if b.allowEOF && err == io.EOF {
+		if b.allowEOF && (err == io.EOF || err.Error() == "stream not present") {
 			b.eof = true
 			return false, err
 		}
