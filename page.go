@@ -705,8 +705,13 @@ type Glyph struct {
 	Text string
 }
 
+type Col struct {
+	MinX float64
+	MaxX float64
+}
+
 // GetTextByRow returns the page's all text grouped by rows
-func (p Page) GetTextByColumns(verticalTolerance float64) (result [][]string, err error) {
+func (p Page) GetTextByColumns(verticalTolerance float64, verticalSplits []Col) (result [][]string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			result = nil
@@ -716,7 +721,7 @@ func (p Page) GetTextByColumns(verticalTolerance float64) (result [][]string, er
 
 	strm := p.V.Key("Contents")
 
-	matrix := make(map[float64][]string, 0)
+	matrix := make(map[float64][]Glyph, 0)
 	glyphs := make([]Glyph, 0)
 
 	var curX, curY float64
@@ -767,12 +772,13 @@ func (p Page) GetTextByColumns(verticalTolerance float64) (result [][]string, er
 				}
 			}
 
-			glyphs = append(glyphs, Glyph{
+			glyph := Glyph{
 				Text: args[0].RawString(),
 				Y:    curY,
 				X:    curX,
-			})
-			matrix[curY] = append(matrix[curY], args[0].RawString())
+			}
+			glyphs = append(glyphs, glyph)
+			matrix[curY] = append(matrix[curY], glyph)
 		case "TJ": // show text, allowing individual glyph positioning
 			v := args[0]
 			for i := 0; i < v.Len(); i++ {
@@ -790,21 +796,67 @@ func (p Page) GetTextByColumns(verticalTolerance float64) (result [][]string, er
 	}
 
 	sort.Float64s(keys)
-	sorted := make([][]string, 0)
+	sortedRows := make([][]Glyph, 0)
 
 	j := 0
 	for i := len(keys) - 1; i >= 0; i-- {
-		sorted = append(sorted, matrix[keys[i]])
+		sortedRows = append(sortedRows, matrix[keys[i]])
 		j++
+	}
+
+	// divide the glyphs into columns based on the X axis
+	oranizedColumns := make([]map[float64][]Glyph, len(verticalSplits), len(verticalSplits))
+	// here we reorder the matrix from being row->col to col->row
+	for i := range oranizedColumns {
+		// initialize every column to be the total number of rows
+		// oranizedColumns[i] = make([]string, len(sortedRows), len(sortedRows))
+		oranizedColumns[i] = make(map[float64][]Glyph)
 	}
 
 	// fmt.Println("------------------- glyphs:", len(glyphs))
 	// for _, v := range glyphs {
 	// 	fmt.Printf("%s: (%.2f, %.2f)\n", v.Text, v.X, v.Y)
+	// 	for colInd, c := range verticalSplits {
+	// 		if v.X >= c.MinX && v.X <= c.MaxX {
+	// 			finalColumns[colInd] = append(finalColumns[colInd], v.Text)
+	// 		}
+	// 	}
+	// }
+	rowsByColumn := make([][]string, len(sortedRows), len(sortedRows))
+	for rowInd, row := range sortedRows {
+		rowsByColumn[rowInd] = make([]string, len(verticalSplits), len(verticalSplits))
+		// [row index][column index][list of glyphs]
+		tempRow := make([][]string, len(verticalSplits), len(verticalSplits))
+		for _, v := range row { // every glyph
+			// if v.Y > 380 && v.Y < 390 {
+			// fmt.Printf("%s: (%.2f, %.2f)\n", v.Text, v.X, v.Y)
+			// } else {
+			// 	continue
+			// }
+
+			// group the text detected into the user defined columns
+			for colInd, c := range verticalSplits {
+				if v.X >= c.MinX && v.X <= c.MaxX {
+					// finalColumns[colInd][rowInd] = v.Text
+					// if _, ok := oranizedColumns[colInd][v.Y]; !ok {
+					// 	oranizedColumns[colInd] = make(map[float64][]Glyph)
+					// }
+					// oranizedColumns[colInd][v.Y] = append(oranizedColumns[colInd][v.Y], v)
+					tempRow[colInd] = append(tempRow[colInd], v.Text)
+				}
+			}
+		}
+		// combine
+		for colInd, tm := range tempRow {
+			rowsByColumn[rowInd][colInd] = strings.Join(tm, " ")
+		}
+	}
+	// fmt.Println("--------------------------- rows by colums: ", len(rowsByColumn))
+	// for i, x := range rowsByColumn {
+	// 	fmt.Println(i, ":", x[0], "->", x[1])
 	// }
 	// fmt.Println("---------------------------")
-
-	return sorted, nil
+	return rowsByColumn, nil
 }
 
 /*
